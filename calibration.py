@@ -39,8 +39,12 @@ def calibrate_temperature_curve(r_vs_t, room_temp):
     time.sleep(0.04)
     siglent.set_voltage(PS, voltage=0.01)
     time.sleep(3)
+    # Set the speed and mode of the DMMs
+    siglent.set_mode_speed(DMM_i, 'CURR', 10)
+    siglent.set_mode_speed(DMM_v, 'VOLT', 10)
     measured_voltage, measured_current, temperature = tds_experiment.measure_resistivity(DMM_v, DMM_i, siglent,
                                                                           temperature_interp)
+    print(f"The Temperature:{temperature}, Voltage:{measured_voltage}, Current:{measured_current}")
     measured_resistivity = measured_voltage / measured_current
     # Calculate the resistivity at room temperature
     resistivity_room_temp = resistivity_interp(room_temp).item()
@@ -53,7 +57,8 @@ def calibrate_temperature_curve(r_vs_t, room_temp):
 
     # Apply the shift to resistivity values
     r_vs_t_calibrated = r_vs_t.copy()
-    r_vs_t_calibrated[0, :] += delta_resistivity  # Adjust resistivity values
+    # r_vs_t_calibrated[0, :] += delta_resistivity  # Adjust resistivity values
+    r_vs_t_calibrated[0, :] *= measured_resistivity / resistivity_room_temp
 
     siglent.set_voltage(PS, voltage=0.0)
     time.sleep(0.01)

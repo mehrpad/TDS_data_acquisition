@@ -15,6 +15,7 @@ import calibration
 
 class Ui_TDS(object):
     def __init__(self, data):
+        self.target_temperature = 0
         self.index_plot = 0
         self.voltage = 0
         self.current = 0
@@ -331,15 +332,23 @@ class Ui_TDS(object):
         self.h_flux_x = [i * 0.5 for i in range(200)]
         self.h_flux_y = [0.0] * 200
         self.h_flux_y = [np.nan] * len(self.h_flux_x)
-        pen_h_flux = pg.mkPen(color=(0, 0, 225), width=6)
+        pen_h_flux = pg.mkPen(color=(0, 0, 225), width=4)
         self.h_flux_vis_line = self.h_flux_vis.plot(self.h_flux_x, self.h_flux_y, pen=pen_h_flux)
 
         self.temperature_x = [i * 0.5 for i in range(200)]
         self.temperature_y = [0.0] * 200
         self.temperature_y = [np.nan] * len(self.temperature_x)
-        pen_temperature = pg.mkPen(color=(225, 0, 0), width=6)
+        self.temperature_y_target = [np.nan] * len(self.temperature_x)
+        pen_temperature = pg.mkPen(color=(225, 0, 0), width=4)
+        pen_temperature_target = pg.mkPen(color=(0, 225, 0), width=3)
+        self.temperature_vis_line_target = self.temperature_vis.plot(self.temperature_x, self.temperature_y_target,
+                                                                    pen=pen_temperature_target)
         self.temperature_vis_line = self.temperature_vis.plot(self.temperature_x, self.temperature_y,
                                                               pen=pen_temperature)
+        self.legend = pg.LegendItem(offset=(-5, -35))  # Position legend
+        self.legend.setParentItem(self.temperature_vis.getPlotItem())  # Attach to the plot
+        self.legend.addItem(self.temperature_vis_line_target, f"Diff: "
+                                                           f"{abs(self.target_temperature-self.temperature):.2f}°C")
 
         # Add Axis Labels
         self.styles = {"color": "#f00", "font-size": "12px"}
@@ -423,6 +432,7 @@ class Ui_TDS(object):
         """
         # print(f"Received data: time: {data[0]}, set_T: {data[1]}, T: {data[2]}, h_f: {data[3]}, V: {data[4]}, "
         #       f"I: {data[5]}, C_V: {data[6]}")
+        self.target_temperature = data[1]
         self.voltage = data[4]
         self.current = data[5]
         self.temperature = data[2]
@@ -453,10 +463,14 @@ class Ui_TDS(object):
         # Update the temperature graph
         if self.index_plot < len(self.temperature_y):
             self.temperature_y[self.index_plot] = self.temperature
+            self.temperature_y_target[self.index_plot] = self.target_temperature
         else:
             self.temperature_x.append(self.temperature_x[-1] + 0.5)
             self.temperature_y.append(self.temperature)
+            self.temperature_y_target.append(self.target_temperature)
+        self.temperature_vis_line_target.setData(self.temperature_x, self.temperature_y_target)
         self.temperature_vis_line.setData(self.temperature_x, self.temperature_y)
+        self.legend.items[0][1].setText(f"Diff: {abs(self.target_temperature-self.temperature):.2f}°C")
 
         # Update the heat flux graph
         if self.index_plot < len(self.h_flux_y):

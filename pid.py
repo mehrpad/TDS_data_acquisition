@@ -55,7 +55,7 @@ class PIDController:
         derivative = self.kd * (error - self.previous_error)
 
         # Calculate the output
-        print(f"Proportional: {proportional}, Integral: {integral}, Derivative: {derivative}")
+        # print(f"Proportional: {proportional}, Integral: {integral}, Derivative: {derivative}")
         self.output = proportional + integral + derivative
 
         # Save the error for the next iteration

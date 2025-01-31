@@ -19,6 +19,9 @@ def tds(emitter, experiment_params, r_vs_t, config):
     time.sleep(0.04)
     siglent.set_voltage(PS, voltage=0.0)
     time.sleep(1)
+    # Set the speed and mode of the DMMs
+    siglent.set_mode_speed(DMM_i, 'CURR', config['DMM_speed'])
+    siglent.set_mode_speed(DMM_v, 'VOLT', config['DMM_speed'])
     loop_time = 1 / config['experiment_frequency']  # Loop time in seconds
     temperature_interp = interp1d(r_vs_t[0, :], r_vs_t[1, :], kind='linear', fill_value='extrapolate')
     for ex_param in experiment_params:
@@ -29,18 +32,24 @@ def tds(emitter, experiment_params, r_vs_t, config):
         ramp_speed = (ex_param['ramp_speed_c_min'] / 60) # Convert from per minute to per second
         ramp_speed =  ramp_speed  * config['experiment_frequency'] # Convert from per second to per loop
         hold_step_min = ex_param['hold_step_time_min']
+        hold_step_counter = 0
+        hold_step__time_counter = 0
+        old_pid_voltage = 0
+        loop_counter = 0
+
         pid_voltage = 0.01
         siglent.set_voltage(PS, voltage=pid_voltage)
         time.sleep(3)
         measured_voltage, measured_current, temperature = measure_resistivity(DMM_v, DMM_i, siglent,
                                                                               temperature_interp)
         print(f"The initial temperature is {temperature}")
-        pid_controller = pid.PIDController(kp=0.001, ki=0.00001, kd=0.001, setpoint=start_T)
+        target_T_temp = start_T + step_T * hold_step_counter
+        pid_controller = pid.PIDController(kp=0.001, ki=0.00001, kd=0.001, setpoint=target_T_temp)
         while temperature < start_T and not emitter.stopped:
             pid_voltage += pid_controller.compute(temperature)
             pid_voltage = max(0.0, min(pid_voltage, config['max_voltage']))
             siglent.set_voltage(PS, voltage=pid_voltage)
-            time.sleep(0.5)
+            time.sleep(0.3)
             measured_voltage, measured_current, temperature = measure_resistivity(DMM_v, DMM_i, siglent,
                                                                                   temperature_interp)
             current_time = datetime.datetime.now()
@@ -48,31 +57,26 @@ def tds(emitter, experiment_params, r_vs_t, config):
                 "%Y-%m-%d %H:%M:%S.%f")  # Format with microseconds
             current_time_unix = datetime.datetime.strptime(current_time_with_microseconds,
                                                            "%Y-%m-%d %H:%M:%S.%f").timestamp()
-            emitter.experiment_signal.emit([current_time_unix, target_T, temperature,
+            emitter.experiment_signal.emit([current_time_unix, target_T_temp, temperature,
                                             0, measured_voltage, measured_current, pid_voltage])
-            print(f"Start phase: Temperature: {temperature}, Voltage: {pid_voltage}")
+            # print(f"Start phase: Temperature: {temperature}, Voltage: {pid_voltage}")
         print(f"The start temperature is reached: {temperature}")
-        hold_step_counter = 0
-        hold_step__time_counter = 0
-        old_pid_voltage = 0
-        loop_counter = 0
-        target_T_temp = start_T + step_T * hold_step_counter
         while not emitter.stopped:
             start_time_loop = time.time()
-            print(f"Temperature: {temperature}, Voltage: {pid_voltage}, Target temperature: {target_T_temp}")
+            # print(f"Temperature: {temperature}, Voltage: {pid_voltage}, Target temperature: {target_T_temp}")
             if target_T_temp > target_T:
                 print('The temperature is higher than the target temperature. The experiment is finished.')
                 break
 
             if target_T_temp >= start_T + step_T * hold_step_counter:
                 hold_step__time_counter += 1
-                print(f"Hold step time counter: {hold_step__time_counter}")
+                # print(f"Hold step time counter: {hold_step__time_counter}")
                 if hold_step__time_counter * config['experiment_frequency'] >= hold_step_min * 60:
                     hold_step_counter += 1
                     hold_step__time_counter = 0
                     loop_counter = 0
             else:
-                print(f"Ramp speed: {ramp_speed}, Loop counter: {loop_counter}")
+                # print(f"Ramp speed: {ramp_speed}, Loop counter: {loop_counter}")
                 target_T_temp = start_T + step_T * (hold_step_counter - 1) + ramp_speed * loop_counter
                 pid_voltage += pid_controller.compute(temperature, setpoint=target_T_temp)
                 pid_voltage = max(0.0, min(pid_voltage, config['max_voltage']))
@@ -84,7 +88,7 @@ def tds(emitter, experiment_params, r_vs_t, config):
                         siglent.set_voltage(PS, voltage=pid_voltage)
                     except Exception as e:
                         print(f"An error occurred in setting voltage: {e}")
-                time.sleep(0.01)
+                time.sleep(0.1)
             # Measure resistivity and update temperature
             measured_voltage, measured_current, temperature = measure_resistivity(DMM_v, DMM_i, siglent,
                                                                                   temperature_interp)
@@ -93,7 +97,7 @@ def tds(emitter, experiment_params, r_vs_t, config):
                 "%Y-%m-%d %H:%M:%S.%f")  # Format with microseconds
             current_time_unix = datetime.datetime.strptime(current_time_with_microseconds,
                                                            "%Y-%m-%d %H:%M:%S.%f").timestamp()
-            emitter.experiment_signal.emit([current_time_unix, target_T, temperature,
+            emitter.experiment_signal.emit([current_time_unix, target_T_temp, temperature,
                                             0, measured_voltage, measured_current, pid_voltage])
 
             loop_elapsed_time = time.time() - start_time_loop
@@ -108,7 +112,7 @@ def tds(emitter, experiment_params, r_vs_t, config):
         siglent.set_voltage(PS, voltage=0.0)
     except Exception as e:
         print(f"An error occurred in setting voltage: {e}")
-    time.sleep(0.)
+    time.sleep(0.1)
     DMM_v.close()
     DMM_i.close()
     siglent.set_output(PS, state='OFF')
@@ -119,12 +123,12 @@ def tds(emitter, experiment_params, r_vs_t, config):
 
 def measure_resistivity(DMM_v, DMM_i, siglent, temperature_interp):
     try:
-        measured_voltage = float(siglent.measV(DMM_v, 'DC'))
+        measured_voltage = float(siglent.read_DMM(DMM_v))
     except Exception as e:
         print(f"An error occurred reading voltage DMM: {e}")
         measured_voltage = np.nan
     try:
-        measured_current = float(siglent.measI(DMM_i, 'DC'))
+        measured_current = float(siglent.read_DMM(DMM_i))
     except Exception as e:
         print(f"An error occurred reading current DMM: {e}")
         measured_current = np.nan
