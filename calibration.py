@@ -8,7 +8,7 @@ import numpy as np
 import pyvisa
 from scipy.interpolate import interp1d
 
-import siglent, tds_experiment
+import siglent, tds_experiment, pid
 
 
 
@@ -38,7 +38,7 @@ def calibrate_temperature_curve(r_vs_t, room_temp):
     siglent.set_output(PS, state='ON')
     time.sleep(0.04)
     siglent.set_voltage(PS, voltage=0.01)
-    time.sleep(2)
+    time.sleep(3)
     measured_voltage, measured_current, temperature = tds_experiment.measure_resistivity(DMM_v, DMM_i, siglent,
                                                                           temperature_interp)
     measured_resistivity = measured_voltage / measured_current
@@ -67,49 +67,80 @@ def calibrate_temperature_curve(r_vs_t, room_temp):
     return r_vs_t_calibrated
 
 
-def calibrate_pid(start_T, target_T, ramp_speed, measure_temperature, set_voltage, loop_time=0.1, max_iter=100):
+def tune_pid(experiment_params, config, r_vs_t, max_iter=5):
     """
     Calibrate PID parameters for temperature control.
-
-    Parameters:
-        start_T (float): Starting temperature.
-        target_T (float): Target temperature.
-        ramp_speed (float): Ramp speed in °C/min.
-        measure_temperature (callable): Function to measure the current temperature.
-        set_voltage (callable): Function to set the power supply voltage.
-        loop_time (float): Time interval for loop (in seconds).
-        max_iter (int): Maximum number of iterations for calibration.
-
-    Returns:
-        dict: Optimal PID parameters (Kp, Ki, Kd).
+    Returns optimal PID parameters (Kp, Ki, Kd) for the given setup.
     """
-    from scipy.optimize import minimize
+    # Initialize instruments
+    rm = pyvisa.ResourceManager()
+    DMM_v = rm.open_resource(config['DMM_v'])  # Voltage measurement
+    DMM_i = rm.open_resource(config['DMM_i'])  # Current measurement
+    PS = rm.open_resource(config['PS'])  # Power supply
+    PS.write_termination = '\n'
+    PS.read_termination = '\n'
 
-    def pid_response(params):
-        Kp, Ki, Kd = params
-        integral = 0
-        prev_error = 0
-        temperature = start_T
-        time_elapsed = 0
-        total_error = 0
+    siglent.set_output(PS, state='ON')
+    time.sleep(0.04)
 
-        while temperature < target_T:
-            desired_temperature = min(start_T + ramp_speed * (time_elapsed / 60), target_T)
-            error = desired_temperature - temperature
-            integral += error * loop_time
-            derivative = (error - prev_error) / loop_time
-            prev_error = error
-            pid_voltage = Kp * error + Ki * integral + Kd * derivative
+    loop_time = 1 / config['experiment_frequency']  # Loop time in seconds
+    start_T = experiment_params['start_T']
+    target_T = experiment_params['target_T']
+    step_T = experiment_params['step_T']
+    ramp_speed = (experiment_params['ramp_speed_c_min'] / 60) * config['experiment_frequency']  # Adjust per loop
 
-            # Limit the voltage
-            pid_voltage = max(0.003, min(pid_voltage, 20.0))
+    temperature_interp = interp1d(r_vs_t[0, :], r_vs_t[1, :], kind='linear', fill_value='extrapolate')
 
-            set_voltage(pid_voltage)
-            time.sleep(loop_time)
-            temperature = measure_temperature()
-            time_elapsed += loop_time
+    # Initialize PID tuning parameters
+    best_params = {'Kp': 0.02, 'Ki': 0.001, 'Kd': 0.002}  # Initial guess
+    best_error = float('inf')
 
-            # Evaluate performance (e.g., Integral of Absolute Error)
-            total_error += abs(error) * loop_time
+    target_T_tmp = (start_T + target_T) / 2 + step_T * 1
+    for Kp in np.linspace(0.01, 0.1, 5):  # Sweep through potential Kp values
+        for Ki in np.linspace(0.0005, 0.005, 5):
+            for Kd in np.linspace(0.0005, 0.005, 5):
+                pid_controller = pid.PIDController(Kp, Ki, Kd, setpoint=target_T_tmp)
 
-        return total_error
+                pid_voltage = 0.01  # Start with small voltage
+                siglent.set_voltage(PS, voltage=pid_voltage)
+                time.sleep(3)
+
+                total_error = 0  # Track cumulative error
+                prev_voltage = pid_voltage
+
+                for _ in range(max_iter):
+                    measured_voltage, measured_current, temperature = tds_experiment.measure_resistivity(
+                        DMM_v, DMM_i, siglent, temperature_interp
+                    )
+
+                    error = target_T_tmp - temperature
+                    pid_output = pid_controller.compute(temperature)
+
+                    # Update voltage incrementally
+                    pid_voltage = prev_voltage + pid_output
+                    pid_voltage = max(0, min(20, pid_voltage))  # Clamp voltage
+                    siglent.set_voltage(PS, voltage=pid_voltage)
+
+                    total_error += abs(error)  # Sum absolute errors
+                    prev_voltage = pid_voltage
+
+                    time.sleep(loop_time)
+
+                # Check if this PID setup is better
+                if total_error < best_error:
+                    best_error = total_error
+                    best_params = {'Kp': Kp, 'Ki': Ki, 'Kd': Kd}
+    try:
+        siglent.set_voltage(PS, voltage=0.0)
+    except Exception as e:
+        print(f"An error occurred in setting voltage: {e}")
+    time.sleep(0.)
+    DMM_v.close()
+    DMM_i.close()
+    siglent.set_output(PS, state='OFF')
+    time.sleep(0.5)
+    PS.close()
+    rm.close()
+    print(f"Best PID parameters: {best_params}")
+
+    return best_params

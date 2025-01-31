@@ -1,3 +1,5 @@
+import json
+
 import numpy as np
 from PyQt6 import QtCore, QtGui, QtWidgets
 from PyQt6.QtCore import QThread, pyqtSignal, QTimer
@@ -6,14 +8,19 @@ import os
 import tds_experiment
 import h5py
 import pyqtgraph as pg
-import pyqtgraph.exporters
 
 
 import calibration
 
 
 class Ui_TDS(object):
-    def __init__(self):
+    def __init__(self, data):
+        self.index_plot = 0
+        self.voltage = 0
+        self.current = 0
+        self.temperature = 0
+        self.index_plot_start = 0
+        self.config = data
         self.experiment_params = []
         self.r_vs_t = None
         self.data_list = []
@@ -29,7 +36,7 @@ class Ui_TDS(object):
             with open('./files/experiment_counter.txt', 'w') as f:
                 f.write(str(1))  # Current time and date
                 self.ex_counter = 1
-        self.freq_acquisition = 1  # Frequency of data acquisition
+        self.freq_acquisition = self.config['experiment_frequency']  # Frequency of data acquisition
         self.emitter = SignalEmitter()
         self.columns = [
             "time",  # Time in UNIX-readable format
@@ -297,14 +304,16 @@ class Ui_TDS(object):
         self.retranslateUi(TDS)
         QtCore.QMetaObject.connectSlotsByName(TDS)
         TDS.setTabOrder(self.ex_number, self.ex_name)
-        TDS.setTabOrder(self.ex_name, self.parameters_text)
-        TDS.setTabOrder(self.parameters_text, self.find_csv_botton)
-        TDS.setTabOrder(self.find_csv_botton, self.load_csv_botton)
-        TDS.setTabOrder(self.load_csv_botton, self.start_botton)
+        TDS.setTabOrder(self.ex_name, self.calib_temperature)
+        TDS.setTabOrder(self.calib_temperature, self.parameters_text)
+        TDS.setTabOrder(self.parameters_text, self.start_botton)
         TDS.setTabOrder(self.start_botton, self.stop_botton)
-        TDS.setTabOrder(self.stop_botton, self.temperature_vis)
+        TDS.setTabOrder(self.stop_botton, self.find_csv_botton)
+        TDS.setTabOrder(self.find_csv_botton, self.load_csv_botton)
+        TDS.setTabOrder(self.load_csv_botton, self.calibrate_botton_base_t)
+        TDS.setTabOrder(self.calibrate_botton_base_t, self.calibrate_botton_pid)
+        TDS.setTabOrder(self.calibrate_botton_pid, self.temperature_vis)
         TDS.setTabOrder(self.temperature_vis, self.h_flux_vis)
-
 
         #####
         self.timer_error = QtCore.QTimer()
@@ -322,14 +331,15 @@ class Ui_TDS(object):
         self.h_flux_x = [i * 0.5 for i in range(200)]
         self.h_flux_y = [0.0] * 200
         self.h_flux_y = [np.nan] * len(self.h_flux_x)
-        pen_h_flux = pg.mkPen(color=(255, 0, 0), width=6)
+        pen_h_flux = pg.mkPen(color=(0, 0, 225), width=6)
         self.h_flux_vis_line = self.h_flux_vis.plot(self.h_flux_x, self.h_flux_y, pen=pen_h_flux)
 
         self.temperature_x = [i * 0.5 for i in range(200)]
         self.temperature_y = [0.0] * 200
         self.temperature_y = [np.nan] * len(self.temperature_x)
-        pen_temperature = pg.mkPen(color=(0, 0, 255), width=6)
-        self.temperature_vis_line = self.temperature_vis.plot(self.temperature_x, self.temperature_y, pen=pen_temperature)
+        pen_temperature = pg.mkPen(color=(225, 0, 0), width=6)
+        self.temperature_vis_line = self.temperature_vis.plot(self.temperature_x, self.temperature_y,
+                                                              pen=pen_temperature)
 
         # Add Axis Labels
         self.styles = {"color": "#f00", "font-size": "12px"}
@@ -345,14 +355,15 @@ class Ui_TDS(object):
         self.ex_number.setEnabled(False)
         self.ex_number.setText(str(self.ex_counter))
 
+
     def retranslateUi(self, TDS):
         _translate = QtCore.QCoreApplication.translate
-        TDS.setWindowTitle(_translate("TDS", "TDS Data Acquisition"))
+        TDS.setWindowTitle(_translate("TDS", "TDS"))
         self.label_183.setText(_translate("TDS", "Experiment Number"))
         self.ex_number.setText(_translate("TDS", "1"))
         self.label_175.setText(_translate("TDS", "Experiment Name"))
         self.ex_name.setText(_translate("TDS", "test"))
-        self.label_176.setText(_translate("TDS", "Base Temperature °C"))
+        self.label_176.setText(_translate("TDS", "Temperature Zero °C"))
         self.calib_temperature.setText(_translate("TDS", "23"))
         self.label_1.setText(_translate("TDS", "Temperature °C"))
         self.label_2.setText(_translate("TDS", "Voltage (V)"))
@@ -361,13 +372,13 @@ class Ui_TDS(object):
 "<html><head><meta name=\"qrichtext\" content=\"1\" /><meta charset=\"utf-8\" /><style type=\"text/css\">\n"
 "p, li { white-space: pre-wrap; }\n"
 "</style></head><body style=\" font-family:\'Segoe UI\'; font-size:9pt; font-weight:400; font-style:normal;\">\n"
-"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-family:\'JetBrains Mono,monospace\'; font-size:8pt; color:#000000;\">{start_T=200;step_T</span><span style=\" font-family:\'MS Shell Dlg 2\'; font-size:7.875pt;\">=40;target_T=800;ramp_speed_c_min=20;hold_step_time_min=1</span><span style=\" font-family:\'JetBrains Mono,monospace\'; font-size:8pt; color:#000000;\">}</span>                                                                              </p></body></html>"))
+"<p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-family:\'JetBrains Mono,monospace\'; font-size:8pt; color:#000000;\">{start_T=200;step_T</span><span style=\" font-family:\'MS Shell Dlg 2\'; font-size:7.875pt;\">=40;target_T=800;ramp_speed_c_min=40;hold_step_time_min=0.5</span><span style=\" font-family:\'JetBrains Mono,monospace\'; font-size:8pt; color:#000000;\">}</span>                                                                              </p></body></html>"))
         self.start_botton.setText(_translate("TDS", "Start"))
         self.find_csv_botton.setText(_translate("TDS", "Find R vs. T"))
-        self.calibrate_botton_base_t.setText(_translate("TDS", "Calibrate Base T."))
+        self.calibrate_botton_base_t.setText(_translate("TDS", "Calibrate T. Zero"))
         self.stop_botton.setText(_translate("TDS", "Stop"))
         self.load_csv_botton.setText(_translate("TDS", "Load"))
-        self.calibrate_botton_pid.setText(_translate("TDS", "Calibrate PID"))
+        self.calibrate_botton_pid.setText(_translate("TDS", "Tune PID"))
         self.Error.setText(_translate("TDS", "<html><head/><body><p><br/></p></body></html>"))
         self.menuFile.setTitle(_translate("TDS", "File"))
         self.menuHelp.setTitle(_translate("TDS", "Help"))
@@ -410,11 +421,14 @@ class Ui_TDS(object):
         Return:
             None
         """
-        print(f"Received data: time: {data[0]}, set_T: {data[1]}, T: {data[2]}, h_f: {data[3]}, V: {data[4]}, "
-              f"I: {data[5]}, C_V: {data[6]}")
-        self.voltage_lcd.display(data[4])
-        self.current_lcd.display(data[5])
-        self.temperature_lcd.display(data[2])
+        # print(f"Received data: time: {data[0]}, set_T: {data[1]}, T: {data[2]}, h_f: {data[3]}, V: {data[4]}, "
+        #       f"I: {data[5]}, C_V: {data[6]}")
+        self.voltage = data[4]
+        self.current = data[5]
+        self.temperature = data[2]
+        self.voltage_lcd.display(self.voltage)
+        self.current_lcd.display(self.current)
+        self.temperature_lcd.display(self.temperature)
 
         # "time",  # Time in UNIX-readable format
         # "set_T",  # Set temperature
@@ -429,10 +443,30 @@ class Ui_TDS(object):
         """
         Update the graphs with new data
         """
+        if self.index_plot_start == 0:
+            self.index_plot_start += 1
+            self.index_plot += 1
+            # clear the graphs
+            self.temperature_y = [np.nan] * len(self.temperature_x)
+            self.h_flux_y = [np.nan] * len(self.h_flux_x)
+
         # Update the temperature graph
-        pass
+        if self.index_plot < len(self.temperature_y):
+            self.temperature_y[self.index_plot] = self.temperature
+        else:
+            self.temperature_x.append(self.temperature_x[-1] + 0.5)
+            self.temperature_y.append(self.temperature)
+        self.temperature_vis_line.setData(self.temperature_x, self.temperature_y)
 
         # Update the heat flux graph
+        if self.index_plot < len(self.h_flux_y):
+            self.h_flux_y[self.index_plot] = 0.0
+        else:
+            self.h_flux_x.append(self.h_flux_x[-1] + 0.5)
+            self.h_flux_y.append(0.0)
+        self.h_flux_vis_line.setData(self.h_flux_x, self.h_flux_y)
+
+        self.index_plot += 1
 
     def calibrate_base_temperature(self):
         """
@@ -447,7 +481,7 @@ class Ui_TDS(object):
         try:
             base_temperature = float(self.calib_temperature.text())
             self.r_vs_t = calibration.calibrate_temperature_curve(self.r_vs_t, base_temperature)
-            self.error_message('Base temperature calibrated', color='black')
+            self.error_message('Zero temperature calibrated', color='black')
         except ValueError:
             self.error_message('Invalid base temperature', color='red')
         self.calibrate_botton_base_t.setEnabled(True)
@@ -467,8 +501,18 @@ class Ui_TDS(object):
         self.load_csv_botton.setEnabled(False)
         self.start_botton.setEnabled(False)
         self.stop_botton.setEnabled(False)
+        # Extract each line and parse key-value pairs
+        text = self.parameters_text.toPlainText()
+        for line in text.strip().split("\n"):
+            line = line.strip("{}").strip()  # Remove surrounding braces and extra spaces
+            # Split by semicolons and process key-value pairs
+            key_value_pairs = line.split(";")
+            single_dict = {key.strip(): float(value.strip(" }")) for key, value in
+                           (pair.split("=") for pair in key_value_pairs)}
+            self.experiment_params.append(single_dict)
+
         try:
-            calibration.calibrate_pid()
+            calibration.tune_pid(self.experiment_params[0], self.config, self.r_vs_t)
             self.error_message('PID calibrated', color='black')
         except ValueError:
             self.error_message('Error calibrating PID', color='red')
@@ -490,15 +534,18 @@ class Ui_TDS(object):
             line = line.strip("{}").strip()  # Remove surrounding braces and extra spaces
             # Split by semicolons and process key-value pairs
             key_value_pairs = line.split(";")
-            single_dict = {key.strip(): int(value.strip(" }")) for key, value in
+            single_dict = {key.strip(): float(value.strip(" }")) for key, value in
                            (pair.split("=") for pair in key_value_pairs)}
             self.experiment_params.append(single_dict)
 
         self.worker_thread = WorkerThread(tds_experiment.tds, emitter=self.emitter,
                                           experiment_params=self.experiment_params, r_vs_t=self.r_vs_t,
-                                          freq_acquisition=self.freq_acquisition)
+                                          config=self.config)
         self.worker_thread.finished.connect(self.thread_finished)
         self.worker_thread.start()
+        self.update_timer.start(500)
+        # tds_experiment.tds(self.emitter, self.experiment_params, self.r_vs_t, self.config)
+
 
 
     def stop_clicked(self):
@@ -510,14 +557,24 @@ class Ui_TDS(object):
             self.stop_botton.setEnabled(False)
             print('Stop signal sent')
 
-    def thread_finished(self,):
+    def thread_finished(self, finished):
         """
         Handles the thread completion.
         """
+        self.update_timer.stop()
+        self.index_plot_start = 0
+        self.index_plot = 0
+        self.voltage = 0
+        self.current = 0
+        self.temperature = 0
         self.start_botton.setEnabled(True)
         self.stop_botton.setEnabled(True)
         self.emitter.stopped = False
         self.worker_thread = None
+
+        self.voltage_lcd.display(0)
+        self.current_lcd.display(0)
+        self.temperature_lcd.display(0)
 
         self.experiment_params = []
         # Save new value of experiment counter
@@ -525,23 +582,29 @@ class Ui_TDS(object):
             self.ex_counter += 1
             with open('./files/experiment_counter.txt', 'w') as f:
                 f.write(str(self.ex_counter))
+        self.ex_number.setText(str(self.ex_counter))
 
-        # dataset = pd.DataFrame(self.data_list, columns=self.columns)
-        # print(dataset)
-        dataset = np.array(self.data_list)
-        dataset = dataset.T
-        #create a new folder for the experiment
-        path = f"./data/{self.ex_counter}_{self.experiment_name}"
-        if not os.path.exists(path):
-            os.makedirs(path, mode=0o777, exist_ok=True)
-        with h5py.File(path + '/data.h5', "w") as f:
-            f.create_dataset("time_stamp", data=dataset[0], dtype='f8')
-            f.create_dataset("set_temperature", data=dataset[1], dtype='f8')
-            f.create_dataset("measured_temperature", data=dataset[2], dtype='f8')
-            f.create_dataset("heat_flux", data=dataset[3], dtype='f8')
-            f.create_dataset("voltage", data=dataset[4], dtype='f8')
-            f.create_dataset("current", data=dataset[5], dtype='f8')
-            f.create_dataset("calculated_voltage", data=dataset[6], dtype='f8')
+        if finished is not None:
+            self.error_message(f"Error in experiment thread")
+            print(f"Error in experiment thread: {finished}")
+        else:
+            # dataset = pd.DataFrame(self.data_list, columns=self.columns)
+            # print(dataset)
+            dataset = np.array(self.data_list)
+            dataset = dataset.T
+            #create a new folder for the experiment
+            path = f"./data/{self.ex_counter}_{self.experiment_name}"
+            if not os.path.exists(path):
+                os.makedirs(path, mode=0o777, exist_ok=True)
+            with h5py.File(path + '/data.h5', "w") as f:
+                f.create_dataset("time_stamp", data=dataset[0], dtype='f8')
+                f.create_dataset("set_temperature", data=dataset[1], dtype='f8')
+                f.create_dataset("measured_temperature", data=dataset[2], dtype='f8')
+                f.create_dataset("heat_flux", data=dataset[3], dtype='f8')
+                f.create_dataset("voltage", data=dataset[4], dtype='f8')
+                f.create_dataset("current", data=dataset[5], dtype='f8')
+                f.create_dataset("calculated_voltage", data=dataset[6], dtype='f8')
+
 
     def error_message(self, message, color='red'):
         """
@@ -582,7 +645,6 @@ class Ui_TDS(object):
                                       "color:#ff0000;\"></span></p></body></html>"))
 
         self.timer_error.stop()
-
 
 class WorkerThread(QThread):
     finished = pyqtSignal(object)  # Signal emitted when the function is done
@@ -629,7 +691,18 @@ if __name__ == "__main__":
     app = QtWidgets.QApplication(sys.argv)
     app.setStyle('Fusion')
     TDS = QtWidgets.QMainWindow()
-    ui = Ui_TDS()
+    try:
+        # Load the JSON file
+        config_file = './files/config.json'
+        with open(config_file) as file:
+            data = json.load(file)
+    except Exception as e:
+        print('Cannot load the configuration file')
+        print(e)
+        sys.exit()
+
+    ui = Ui_TDS(data)
     ui.setupUi(TDS)
     TDS.show()
     sys.exit(app.exec())
+

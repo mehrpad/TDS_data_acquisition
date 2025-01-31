@@ -110,7 +110,7 @@
            </sizepolicy>
           </property>
           <property name="text">
-           <string>Base Temperature °C</string>
+           <string>Zero Temperature °C</string>
           </property>
          </widget>
         </item>
@@ -176,7 +176,7 @@
          </widget>
         </item>
         <item row="4" column="0">
-         <widget class="QLCDNumber" name="temprature_lcd">
+         <widget class="QLCDNumber" name="temperature_lcd">
           <property name="sizePolicy">
            <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
             <horstretch>0</horstretch>
@@ -342,7 +342,7 @@ p, li { white-space: pre-wrap; }
            <string notr="true">QPushButton{background: rgb(193, 193, 193)}</string>
           </property>
           <property name="text">
-           <string>Calibrate Base T.</string>
+           <string>Calibrate T. Zero</string>
           </property>
          </widget>
         </item>
@@ -408,7 +408,7 @@ p, li { white-space: pre-wrap; }
            <string notr="true">QPushButton{background: rgb(193, 193, 193)}</string>
           </property>
           <property name="text">
-           <string>Calibrate PID</string>
+           <string>Tune PID</string>
           </property>
          </widget>
         </item>
@@ -521,11 +521,14 @@ p, li { white-space: pre-wrap; }
  <tabstops>
   <tabstop>ex_number</tabstop>
   <tabstop>ex_name</tabstop>
+  <tabstop>calib_temperature</tabstop>
   <tabstop>parameters_text</tabstop>
-  <tabstop>find_csv_botton</tabstop>
-  <tabstop>load_csv_botton</tabstop>
   <tabstop>start_botton</tabstop>
   <tabstop>stop_botton</tabstop>
+  <tabstop>find_csv_botton</tabstop>
+  <tabstop>load_csv_botton</tabstop>
+  <tabstop>calibrate_botton_base_t</tabstop>
+  <tabstop>calibrate_botton_pid</tabstop>
   <tabstop>temperature_vis</tabstop>
   <tabstop>h_flux_vis</tabstop>
  </tabstops>
