@@ -328,6 +328,7 @@ class Ui_TDS(object):
         self.stop_botton.clicked.connect(self.stop_clicked)
         self.calibrate_botton_base_t.clicked.connect(self.calibrate_base_temperature)
         self.calibrate_botton_pid.clicked.connect(self.calibrate_pid)
+        self.calibrate_botton_pid.setEnabled(False)
 
         self.h_flux_x = [i * 0.5 for i in range(200)]
         self.h_flux_y = [0.0] * 200
@@ -339,15 +340,15 @@ class Ui_TDS(object):
         self.temperature_y = [0.0] * 200
         self.temperature_y = [np.nan] * len(self.temperature_x)
         self.temperature_y_target = [np.nan] * len(self.temperature_x)
-        pen_temperature = pg.mkPen(color=(225, 0, 0), width=4)
-        pen_temperature_target = pg.mkPen(color=(0, 225, 0), width=3)
+        pen_temperature = pg.mkPen(color=(225, 0, 0, 90), width=4)
+        pen_temperature_target = pg.mkPen(color=(0, 0, 225), width=3, style=QtCore.Qt.PenStyle.DashLine)
         self.temperature_vis_line_target = self.temperature_vis.plot(self.temperature_x, self.temperature_y_target,
                                                                     pen=pen_temperature_target)
         self.temperature_vis_line = self.temperature_vis.plot(self.temperature_x, self.temperature_y,
                                                               pen=pen_temperature)
         self.legend = pg.LegendItem(offset=(-5, -35))  # Position legend
         self.legend.setParentItem(self.temperature_vis.getPlotItem())  # Attach to the plot
-        self.legend.addItem(self.temperature_vis_line_target, f"Diff: "
+        self.legend.addItem(self.temperature_vis_line, f"Diff: "
                                                            f"{abs(self.target_temperature-self.temperature):.2f}°C")
 
         # Add Axis Labels
@@ -356,6 +357,9 @@ class Ui_TDS(object):
         self.temperature_vis.setLabel("bottom", "Time (s)", **self.styles)
         self.h_flux_vis.setLabel("left", "Hydrogen Flux", units='mol/s', **self.styles)
         self.h_flux_vis.setLabel("bottom", "Time (s)", **self.styles)
+
+        self.temperature_vis.showGrid(x=True, y=True)
+        self.h_flux_vis.showGrid(x=True, y=True)
 
         self.update_timer = QTimer()  # Create a QTimer for updating graphs
         # self.update_timer.start(500)
@@ -458,6 +462,7 @@ class Ui_TDS(object):
             self.index_plot += 1
             # clear the graphs
             self.temperature_y = [np.nan] * len(self.temperature_x)
+            self.temperature_y_target = [np.nan] * len(self.temperature_x)
             self.h_flux_y = [np.nan] * len(self.h_flux_x)
 
         # Update the temperature graph
@@ -486,24 +491,27 @@ class Ui_TDS(object):
         """
         Calibrate the base temperature
         """
-        self.calibrate_botton_base_t.setEnabled(False)
-        self.calibrate_botton_pid.setEnabled(False)
-        self.find_csv_botton.setEnabled(False)
-        self.load_csv_botton.setEnabled(False)
-        self.start_botton.setEnabled(False)
-        self.stop_botton.setEnabled(False)
-        try:
-            base_temperature = float(self.calib_temperature.text())
-            self.r_vs_t = calibration.calibrate_temperature_curve(self.r_vs_t, base_temperature)
-            self.error_message('Zero temperature calibrated', color='black')
-        except ValueError:
-            self.error_message('Invalid base temperature', color='red')
-        self.calibrate_botton_base_t.setEnabled(True)
-        self.calibrate_botton_pid.setEnabled(True)
-        self.find_csv_botton.setEnabled(True)
-        self.load_csv_botton.setEnabled(True)
-        self.start_botton.setEnabled(True)
-        self.stop_botton.setEnabled(True)
+        if self.r_vs_t is not None:
+            self.calibrate_botton_base_t.setEnabled(False)
+            self.calibrate_botton_pid.setEnabled(False)
+            self.find_csv_botton.setEnabled(False)
+            self.load_csv_botton.setEnabled(False)
+            self.start_botton.setEnabled(False)
+            self.stop_botton.setEnabled(False)
+            try:
+                base_temperature = float(self.calib_temperature.text())
+                self.r_vs_t = calibration.calibrate_temperature_curve(self.r_vs_t, base_temperature)
+                self.error_message('Zero temperature calibrated', color='black')
+            except ValueError:
+                self.error_message('Invalid base temperature', color='red')
+            self.calibrate_botton_base_t.setEnabled(True)
+            self.calibrate_botton_pid.setEnabled(True)
+            self.find_csv_botton.setEnabled(True)
+            self.load_csv_botton.setEnabled(True)
+            self.start_botton.setEnabled(True)
+            self.stop_botton.setEnabled(True)
+        else:
+            self.error_message('First Load a R vs. T', color='red')
 
     def calibrate_pid(self):
         """

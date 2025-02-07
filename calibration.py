@@ -42,8 +42,24 @@ def calibrate_temperature_curve(r_vs_t, room_temp):
     # Set the speed and mode of the DMMs
     siglent.set_mode_speed(DMM_i, 'CURR', 10)
     siglent.set_mode_speed(DMM_v, 'VOLT', 10)
-    measured_voltage, measured_current, temperature = tds_experiment.measure_resistivity(DMM_v, DMM_i, siglent,
-                                                                          temperature_interp)
+    time.sleep(1)
+    # To be accurate, we measure the resistivity at room temperature 3 times and take the average
+    measured_current = []
+    measured_voltage = []
+    temperature = []
+    success_num = 0
+    while success_num < 3:
+        measured_voltage_c, measured_current_c, temperature_c = tds_experiment.measure_resistivity(DMM_v, DMM_i, siglent, temperature_interp)
+        if measured_current != 0 and measured_voltage != 0 and temperature != 0:
+            success_num += 1
+            measured_current.append(measured_current_c)
+            measured_voltage.append(measured_voltage_c)
+            temperature.append(temperature_c)
+        time.sleep(1)
+
+    measured_current = np.mean(np.array(measured_current))
+    measured_voltage = np.mean(np.array(measured_voltage))
+    temperature = np.mean(np.array(temperature))
     print(f"The Temperature:{temperature}, Voltage:{measured_voltage}, Current:{measured_current}")
     measured_resistivity = measured_voltage / measured_current
     # Calculate the resistivity at room temperature
@@ -52,7 +68,7 @@ def calibrate_temperature_curve(r_vs_t, room_temp):
     # Calculate the shift in resistivity
     delta_resistivity = measured_resistivity - resistivity_room_temp
     print(f"Measured resistivity: {measured_resistivity:.4f} Ohm")
-    print(f"Resistivity at room temperature: {resistivity_room_temp:.4f} Ohm")
+    print(f"Resistivity at zero temperature: {resistivity_room_temp:.4f} Ohm")
     print(f"Shift in resistivity: {delta_resistivity:.4f} Ohm")
 
     # Apply the shift to resistivity values
